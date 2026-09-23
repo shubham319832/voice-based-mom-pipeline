@@ -1,280 +1,110 @@
 import re
 
 
-# ============================================================
-# TEXT UTILITIES
-# ============================================================
-
 def clean_text(text):
-    """
-    Clean unnecessary whitespace from transcript text.
-    """
-
-    if not text:
-        return ""
-
-    return " ".join(text.split())
+    return " ".join(text.strip().split())
 
 
 def normalize_text(text):
-    """
-    Convert text to lowercase for matching.
-    """
-
-    return clean_text(text).lower()
+    return text.lower().strip()
 
 
-# ============================================================
-# SUMMARY
-# ============================================================
-
-def create_summary(transcript):
-    """
-    Create a simple extractive summary.
-
-    The function selects the first meaningful sentences
-    from the meeting transcript.
-    """
-
-    if not transcript:
-        return "No transcript available."
-
+def create_summary(aligned_segments, max_sentences=5):
     sentences = []
 
-    for segment in transcript:
-
-        text = clean_text(segment.get("text", ""))
+    for segment in aligned_segments:
+        text = clean_text(segment["text"])
 
         if not text:
             continue
 
-        # Split long transcript segments into sentences
-        parts = re.split(
-            r'(?<=[.!?])\s+',
-            text
-        )
+        if text not in sentences:
+            sentences.append(text)
 
-        for part in parts:
+        if len(sentences) >= max_sentences:
+            break
 
-            part = clean_text(part)
-
-            if len(part) >= 10:
-                sentences.append(part)
-
-    if not sentences:
-        return "No meaningful transcript content available."
-
-    # Remove duplicates while preserving order
-    unique_sentences = []
-
-    seen = set()
-
-    for sentence in sentences:
-
-        key = sentence.lower()
-
-        if key not in seen:
-
-            seen.add(key)
-            unique_sentences.append(sentence)
-
-    # Keep the first 5 meaningful sentences
-    summary_sentences = unique_sentences[:5]
-
-    return " ".join(summary_sentences)
+    return " ".join(sentences)
 
 
-# ============================================================
-# KEY DISCUSSION POINTS
-# ============================================================
-
-def extract_key_points(transcript):
-    """
-    Extract likely discussion points using keywords.
-    """
+def extract_key_points(aligned_segments):
+    keywords = [
+        "discuss",
+        "discussion",
+        "topic",
+        "plan",
+        "project",
+        "level",
+        "ai",
+        "machine learning",
+        "deadline",
+        "requirement",
+        "issue",
+        "problem",
+        "training",
+        "course",
+    ]
 
     key_points = []
 
-    keywords = [
-        "discuss",
-        "discussed",
-        "discussion",
-        "topic",
-        "important",
-        "focus",
-        "cover",
-        "covered",
-        "learn",
-        "learning",
-        "explain",
-        "explained",
-        "plan",
-        "planned",
-        "project",
-        "problem",
-        "issue",
-        "challenge",
-        "solution",
-        "level",
-        "process"
-    ]
-
-    seen = set()
-
-    for segment in transcript:
-
-        text = clean_text(
-            segment.get("text", "")
-        )
-
-        if not text:
-            continue
-
+    for segment in aligned_segments:
+        text = clean_text(segment["text"])
         normalized = normalize_text(text)
 
-        matched = any(
-            keyword in normalized
-            for keyword in keywords
-        )
-
-        if matched:
-
-            key = normalized
-
-            if key not in seen:
-
-                seen.add(key)
-
-                key_points.append({
-                    "speaker": segment.get(
-                        "speaker",
-                        "UNKNOWN"
-                    ),
-                    "timestamp": {
-                        "start": segment.get(
-                            "start",
-                            0
-                        ),
-                        "end": segment.get(
-                            "end",
-                            0
-                        )
-                    },
-                    "text": text
-                })
+        if any(keyword in normalized for keyword in keywords):
+            key_points.append({
+                "speaker": segment["speaker"],
+                "timestamp": {
+                    "start": segment["start"],
+                    "end": segment["end"]
+                },
+                "text": text
+            })
 
     return key_points[:10]
 
 
-# ============================================================
-# DECISIONS
-# ============================================================
-
-def extract_decisions(transcript):
-    """
-    Extract sentences that appear to contain decisions.
-    """
+def extract_decisions(aligned_segments):
+    decision_patterns = [
+        r"\bfinal decision\b",
+        r"\bwe decided\b",
+        r"\bthe decision is\b",
+        r"\bit was decided\b",
+        r"\bagreed that\b",
+        r"\bagreed to\b",
+        r"\bwe agreed\b",
+        r"\bwe chose\b",
+        r"\bwe selected\b",
+        r"\bapproved\b",
+        r"\bconfirmed\b",
+    ]
 
     decisions = []
 
-    decision_patterns = [
-        r"\bwe decided\b",
-        r"\bdecided to\b",
-        r"\bwe have decided\b",
-        r"\bwe will\b",
-        r"\bwe are going to\b",
-        r"\bagreed to\b",
-        r"\bwe agreed\b",
-        r"\bthe decision is\b",
-        r"\bthe decision was\b",
-        r"\bfinal decision\b",
-        r"\bwe chose\b",
-        r"\bwe selected\b"
-    ]
-
-    seen = set()
-
-    for segment in transcript:
-
-        text = clean_text(
-            segment.get("text", "")
-        )
-
-        if not text:
-            continue
-
+    for segment in aligned_segments:
+        text = clean_text(segment["text"])
         normalized = normalize_text(text)
 
-        matched = False
-
-        for pattern in decision_patterns:
-
-            if re.search(
-                pattern,
-                normalized
-            ):
-
-                matched = True
-                break
-
-        if matched:
-
-            key = normalized
-
-            if key not in seen:
-
-                seen.add(key)
-
-                decisions.append({
-                    "speaker": segment.get(
-                        "speaker",
-                        "UNKNOWN"
-                    ),
-                    "timestamp": {
-                        "start": segment.get(
-                            "start",
-                            0
-                        ),
-                        "end": segment.get(
-                            "end",
-                            0
-                        )
-                    },
-                    "text": text
-                })
+        if any(re.search(pattern, normalized) for pattern in decision_patterns):
+            decisions.append({
+                "speaker": segment["speaker"],
+                "timestamp": {
+                    "start": segment["start"],
+                    "end": segment["end"]
+                },
+                "text": text
+            })
 
     return decisions[:10]
 
 
-# ============================================================
-# ACTION ITEMS
-# ============================================================
-
-def extract_action_items(transcript):
-    """
-    Extract likely action items.
-
-    Action items are identified using phrases such as:
-    - need to
-    - should
-    - must
-    - next step
-    - action item
-    - will prepare
-    - will complete
-    - will send
-    """
-
-    action_items = []
-
+def extract_action_items(aligned_segments):
     action_patterns = [
-        r"\bneed to\b",
-        r"\bneeds to\b",
-        r"\bshould\b",
-        r"\bmust\b",
         r"\baction item\b",
         r"\bnext step\b",
-        r"\bto do\b",
+        r"\bneed to\b",
+        r"\bmust\b",
+        r"\bshould\b",
         r"\bwill prepare\b",
         r"\bwill complete\b",
         r"\bwill finish\b",
@@ -284,198 +114,75 @@ def extract_action_items(transcript):
         r"\bwill review\b",
         r"\bwill check\b",
         r"\bwill implement\b",
-        r"\bprepare\b",
-        r"\bcomplete\b",
-        r"\bfinish\b",
-        r"\bsend\b",
-        r"\bcreate\b",
-        r"\bupdate\b",
-        r"\breview\b",
-        r"\bcheck\b",
-        r"\bimplement\b"
     ]
 
-    seen = set()
+    action_items = []
 
-    for segment in transcript:
-
-        text = clean_text(
-            segment.get("text", "")
-        )
-
-        if not text:
-            continue
-
+    for segment in aligned_segments:
+        text = clean_text(segment["text"])
         normalized = normalize_text(text)
 
-        matched = False
-
-        for pattern in action_patterns:
-
-            if re.search(
-                pattern,
-                normalized
-            ):
-
-                matched = True
-                break
-
-        if matched:
-
-            key = normalized
-
-            if key not in seen:
-
-                seen.add(key)
-
-                action_items.append({
-                    "speaker": segment.get(
-                        "speaker",
-                        "UNKNOWN"
-                    ),
-                    "timestamp": {
-                        "start": segment.get(
-                            "start",
-                            0
-                        ),
-                        "end": segment.get(
-                            "end",
-                            0
-                        )
-                    },
-                    "text": text
-                })
+        if any(re.search(pattern, normalized) for pattern in action_patterns):
+            action_items.append({
+                "speaker": segment["speaker"],
+                "timestamp": {
+                    "start": segment["start"],
+                    "end": segment["end"]
+                },
+                "text": text
+            })
 
     return action_items[:10]
 
 
-# ============================================================
-# COMPLETE MEETING ANALYSIS
-# ============================================================
-
-def analyze_meeting(transcript):
-    """
-    Perform complete local meeting analysis.
-    """
-
-    if not transcript:
-
-        return {
-            "summary": "No transcript available.",
-            "key_discussion_points": [],
-            "decisions": [],
-            "action_items": []
-        }
-
-    result = {
-        "summary": create_summary(
-            transcript
-        ),
-        "key_discussion_points": extract_key_points(
-            transcript
-        ),
-        "decisions": extract_decisions(
-            transcript
-        ),
-        "action_items": extract_action_items(
-            transcript
-        )
+def analyze_meeting(aligned_segments):
+    return {
+        "summary": create_summary(aligned_segments),
+        "key_discussion_points": extract_key_points(aligned_segments),
+        "decisions": extract_decisions(aligned_segments),
+        "action_items": extract_action_items(aligned_segments)
     }
 
-    return result
-
-
-# ============================================================
-# TEST
-# ============================================================
 
 if __name__ == "__main__":
-
-    test_transcript = [
-
+    test_segments = [
         {
             "start": 0.0,
             "end": 5.0,
             "speaker": "SPEAKER_00",
-            "text": "Today we will discuss the AI project."
+            "text": "We discussed the project requirements."
         },
-
         {
             "start": 5.0,
             "end": 10.0,
             "speaker": "SPEAKER_01",
-            "text": "We decided to complete the project this week."
+            "text": "We agreed to complete the project by Friday."
         },
-
         {
             "start": 10.0,
             "end": 15.0,
             "speaker": "SPEAKER_00",
-            "text": "The team will prepare the final documentation."
-        },
-
-        {
-            "start": 15.0,
-            "end": 20.0,
-            "speaker": "SPEAKER_01",
-            "text": "The next step is to review the implementation."
+            "text": "I will prepare the documentation."
         }
     ]
 
-    result = analyze_meeting(
-        test_transcript
-    )
+    result = analyze_meeting(test_segments)
 
-    print("\n================================")
+    print("\n==============================")
     print("MEETING ANALYSIS TEST")
-    print("================================")
+    print("==============================")
 
-    print("\nSUMMARY:")
-    print(
-        result["summary"]
-    )
+    print("\nSummary:")
+    print(result["summary"])
 
-    print("\nKEY DISCUSSION POINTS:")
+    print("\nKey Discussion Points:")
+    for item in result["key_discussion_points"]:
+        print(item)
 
-    for point in result[
-        "key_discussion_points"
-    ]:
+    print("\nDecisions:")
+    for item in result["decisions"]:
+        print(item)
 
-        print(
-            f"- {point['speaker']}: "
-            f"{point['text']}"
-        )
-
-    print("\nDECISIONS:")
-
-    for decision in result[
-        "decisions"
-    ]:
-
-        print(
-            f"- {decision['speaker']}: "
-            f"{decision['text']}"
-        )
-
-    print("\nACTION ITEMS:")
-
-    for action in result[
-        "action_items"
-    ]:
-
-        print(
-            f"- {action['speaker']}: "
-            f"{action['text']}"
-        )
-
-    print(
-        "\n================================"
-    )
-
-    print(
-        "MEETING ANALYSIS TEST COMPLETE"
-    )
-
-    print(
-        "================================"
-    )
+    print("\nAction Items:")
+    for item in result["action_items"]:
+        print(item)

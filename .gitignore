@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Large/private meeting files
+data/uploads/*
+data/audio/*
+*.mp4
+*.mp3
+*.wav
+*.m4a
+*.webm
+
+# Generated results
+data/results/*
+!data/results/.gitkeep
+
+# IDE
+.idea/
+.vscode/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

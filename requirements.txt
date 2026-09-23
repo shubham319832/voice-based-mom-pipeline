@@ -1,6 +1,9 @@
-faster-whisper==1.2.1
-pyannote.audio==4.0.7
-streamlit==1.64.0
 fastapi==0.141.1
-uvicorn==0.53.0
+faster-whisper==1.2.1
+plotly==7.1.0
+pyannote-audio==4.0.7
+pytest==9.1.1
 python-multipart==0.0.32
+reportlab==5.0.1
+streamlit==1.64.0
+uvicorn==0.53.0

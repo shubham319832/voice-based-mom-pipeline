@@ -2,31 +2,32 @@ import os
 from pathlib import Path
 
 # ============================================================
-# CUDA DLL PATHS
+# CUDA DLL PATHS - WINDOWS
 # ============================================================
 
-os.add_dll_directory(
-    r"C:\Users\shubh\Pycharmvoice-mom-ai\.venv\Lib\site-packages\nvidia\cublas\bin"
-)
+CUDA_DLL_DIRECTORIES = [
+    r"C:\Users\shubh\Pycharmvoice-mom-ai\.venv\Lib\site-packages\nvidia\cublas\bin",
+    r"C:\Users\shubh\Pycharmvoice-mom-ai\.venv\Lib\site-packages\nvidia\cudnn\bin",
+]
 
-os.add_dll_directory(
-    r"C:\Users\shubh\Pycharmvoice-mom-ai\.venv\Lib\site-packages\nvidia\cudnn\bin"
-)
+for dll_directory in CUDA_DLL_DIRECTORIES:
+    if os.path.exists(dll_directory):
+        os.add_dll_directory(dll_directory)
+
 
 # ============================================================
-# AI IMPORTS
+# IMPORTS
 # ============================================================
 
 from faster_whisper import WhisperModel
 from pyannote.audio import Pipeline
 
-# IMPORTANT:
-# All project modules are inside the src package.
 from src.audio_utils import convert_to_wav
 from src.align import align_transcript
 from src.stats import calculate_speaker_statistics
 from src.meeting_analysis import analyze_meeting
 from src.save_results import save_results
+from src.logger import logger
 
 
 # ============================================================
@@ -35,6 +36,14 @@ from src.save_results import save_results
 
 WHISPER_MODEL = "small"
 
+DIARIZATION_MODEL = (
+    "pyannote/speaker-diarization-community-1"
+)
+
+AUDIO_OUTPUT = Path(
+    "data/audio/meeting_audio.wav"
+)
+
 
 # ============================================================
 # LOAD WHISPER MODEL
@@ -42,7 +51,14 @@ WHISPER_MODEL = "small"
 
 def load_whisper_model():
 
-    print("Loading Whisper model...")
+    logger.info(
+        "Loading Whisper model: %s",
+        WHISPER_MODEL
+    )
+
+    print("\n==============================")
+    print("LOADING WHISPER MODEL")
+    print("==============================")
 
     model = WhisperModel(
         WHISPER_MODEL,
@@ -50,7 +66,13 @@ def load_whisper_model():
         compute_type="float16"
     )
 
-    print("Whisper model loaded successfully!")
+    logger.info(
+        "Whisper model loaded successfully."
+    )
+
+    print(
+        "Whisper model loaded successfully!"
+    )
 
     return model
 
@@ -61,68 +83,61 @@ def load_whisper_model():
 
 def load_diarization_model():
 
-    print("Loading speaker diarization model...")
-
-    pipeline = Pipeline.from_pretrained(
-        "pyannote/speaker-diarization-community-1"
+    logger.info(
+        "Loading diarization model: %s",
+        DIARIZATION_MODEL
     )
 
-    print("Diarization model loaded successfully!")
+    print("\n==============================")
+    print("LOADING DIARIZATION MODEL")
+    print("==============================")
+
+    pipeline = Pipeline.from_pretrained(
+        DIARIZATION_MODEL
+    )
+
+    logger.info(
+        "Diarization model loaded successfully."
+    )
+
+    print(
+        "Diarization model loaded successfully!"
+    )
 
     return pipeline
 
 
 # ============================================================
-# MAIN MEETING PROCESSING FUNCTION
+# TRANSCRIPTION
 # ============================================================
 
-def process_meeting(
-    input_file,
-    output_audio="data/audio/meeting_audio.wav"
+def transcribe_audio(
+    model,
+    audio_file
 ):
 
-    input_file = Path(input_file)
-    output_audio = Path(output_audio)
-
-    # Make sure output directory exists
-    output_audio.parent.mkdir(
-        parents=True,
-        exist_ok=True
+    logger.info(
+        "Starting transcription: %s",
+        audio_file
     )
 
-    # ========================================================
-    # STEP 1: AUDIO PREPROCESSING
-    # ========================================================
-
     print("\n==============================")
-    print("STEP 1: AUDIO PREPROCESSING")
+    print("TRANSCRIPTION")
     print("==============================")
 
-    convert_to_wav(
-        input_file=input_file,
-        output_file=output_audio
-    )
-
-    print("Audio preprocessing completed!")
-
-    # ========================================================
-    # STEP 2: TRANSCRIPTION
-    # ========================================================
-
-    print("\n==============================")
-    print("STEP 2: TRANSCRIPTION")
-    print("==============================")
-
-    whisper_model = load_whisper_model()
-
-    segments, info = whisper_model.transcribe(
-        str(output_audio),
+    segments, info = model.transcribe(
+        str(audio_file),
         beam_size=5
     )
 
     transcript_segments = []
 
     for segment in segments:
+
+        confidence = round(
+            segment.avg_logprob,
+            4
+        )
 
         transcript_segments.append(
             {
@@ -134,147 +149,452 @@ def process_meeting(
                     segment.end,
                     2
                 ),
-                "text": segment.text.strip()
+                "text": segment.text.strip(),
+                "confidence": confidence
             }
         )
 
-    print("Transcription completed!")
-
-    print(
-        "Detected language:",
-        info.language
+    logger.info(
+        "Transcription completed. Language=%s, probability=%.4f, segments=%d",
+        info.language,
+        info.language_probability,
+        len(transcript_segments)
     )
 
     print(
-        "Language probability:",
+        f"Detected language: {info.language}"
+    )
+
+    print(
+        f"Language probability: "
+        f"{info.language_probability:.4f}"
+    )
+
+    print(
+        f"Transcript segments: "
+        f"{len(transcript_segments)}"
+    )
+
+    return (
+        transcript_segments,
+        info.language,
         info.language_probability
     )
 
-    # ========================================================
-    # STEP 3: SPEAKER DIARIZATION
-    # ========================================================
 
-    print("\n==============================")
-    print("STEP 3: SPEAKER DIARIZATION")
-    print("==============================")
+# ============================================================
+# DIARIZATION
+# ============================================================
 
-    diarization_pipeline = (
-        load_diarization_model()
+def diarize_audio(
+    diarization_pipeline,
+    audio_file
+):
+
+    logger.info(
+        "Starting speaker diarization: %s",
+        audio_file
     )
 
-    diarization_output = (
-        diarization_pipeline(
-            str(output_audio)
-        )
+    print("\n==============================")
+    print("SPEAKER DIARIZATION")
+    print("==============================")
+
+    diarization_output = diarization_pipeline(
+        str(audio_file)
     )
 
     speaker_segments = []
 
-    for turn, speaker in (
+    # pyannote.audio 4.x
+    diarization = (
         diarization_output.speaker_diarization
-    ):
+    )
+
+    for turn, speaker in diarization:
 
         speaker_segments.append(
             {
-                "start": turn.start,
-                "end": turn.end,
+                "start": round(
+                    turn.start,
+                    2
+                ),
+                "end": round(
+                    turn.end,
+                    2
+                ),
                 "speaker": speaker
             }
         )
 
-    print(
-        "Speaker diarization completed!"
-    )
-
-    # ========================================================
-    # STEP 4: ALIGN SPEAKERS WITH TRANSCRIPT
-    # ========================================================
-
-    print("\n==============================")
-    print("STEP 4: SPEAKER ALIGNMENT")
-    print("==============================")
-
-    aligned_segments = align_transcript(
-        transcript_segments,
-        speaker_segments
+    logger.info(
+        "Speaker diarization completed. "
+        "Segments=%d",
+        len(speaker_segments)
     )
 
     print(
-        "Speaker alignment completed!"
+        f"Speaker segments detected: "
+        f"{len(speaker_segments)}"
     )
 
-    # ========================================================
-    # STEP 5: SPEAKER STATISTICS
-    # ========================================================
+    for segment in speaker_segments:
 
-    print("\n==============================")
-    print("STEP 5: SPEAKER STATISTICS")
-    print("==============================")
-
-    speaker_statistics = (
-        calculate_speaker_statistics(
-            aligned_segments
+        print(
+            f"[{segment['start']:.2f}s - "
+            f"{segment['end']:.2f}s] "
+            f"{segment['speaker']}"
         )
+
+    return speaker_segments
+
+
+# ============================================================
+# COMPLETE PIPELINE
+# ============================================================
+
+def process_meeting(
+    input_file
+):
+
+    input_file = Path(
+        input_file
+    )
+
+    logger.info(
+        "================================================"
+    )
+
+    logger.info(
+        "Meeting processing started: %s",
+        input_file
+    )
+
+    print("\n========================================")
+    print("VOICE-BASED MINUTES OF MEETING PIPELINE")
+    print("========================================")
+
+    try:
+
+        # ----------------------------------------------------
+        # INPUT VALIDATION
+        # ----------------------------------------------------
+
+        if not input_file.exists():
+
+            logger.error(
+                "Input file not found: %s",
+                input_file
+            )
+
+            raise FileNotFoundError(
+                f"Input file not found: {input_file}"
+            )
+
+        logger.info(
+            "Input file validated successfully."
+        )
+
+        # ----------------------------------------------------
+        # STEP 1 - AUDIO PREPROCESSING
+        # ----------------------------------------------------
+
+        logger.info(
+            "Step 1: Audio preprocessing started."
+        )
+
+        print("\nSTEP 1: AUDIO PREPROCESSING")
+
+        convert_to_wav(
+            input_file,
+            AUDIO_OUTPUT
+        )
+
+        logger.info(
+            "Audio preprocessing completed: %s",
+            AUDIO_OUTPUT
+        )
+
+        # ----------------------------------------------------
+        # STEP 2 - LOAD WHISPER
+        # ----------------------------------------------------
+
+        logger.info(
+            "Step 2: Loading Whisper."
+        )
+
+        print("\nSTEP 2: LOAD WHISPER")
+
+        whisper_model = (
+            load_whisper_model()
+        )
+
+        # ----------------------------------------------------
+        # STEP 3 - TRANSCRIPTION
+        # ----------------------------------------------------
+
+        logger.info(
+            "Step 3: Transcription."
+        )
+
+        print("\nSTEP 3: TRANSCRIPTION")
+
+        (
+            transcript_segments,
+            language,
+            language_probability
+        ) = transcribe_audio(
+            whisper_model,
+            AUDIO_OUTPUT
+        )
+
+        # ----------------------------------------------------
+        # STEP 4 - LOAD DIARIZATION
+        # ----------------------------------------------------
+
+        logger.info(
+            "Step 4: Loading diarization."
+        )
+
+        print("\nSTEP 4: LOAD DIARIZATION")
+
+        diarization_pipeline = (
+            load_diarization_model()
+        )
+
+        # ----------------------------------------------------
+        # STEP 5 - DIARIZATION
+        # ----------------------------------------------------
+
+        logger.info(
+            "Step 5: Speaker diarization."
+        )
+
+        print(
+            "\nSTEP 5: SPEAKER DIARIZATION"
+        )
+
+        speaker_segments = (
+            diarize_audio(
+                diarization_pipeline,
+                AUDIO_OUTPUT
+            )
+        )
+
+        # ----------------------------------------------------
+        # STEP 6 - ALIGNMENT
+        # ----------------------------------------------------
+
+        logger.info(
+            "Step 6: Transcript and speaker alignment."
+        )
+
+        print("\nSTEP 6: ALIGNMENT")
+
+        aligned_segments = (
+            align_transcript(
+                transcript_segments,
+                speaker_segments
+            )
+        )
+
+        logger.info(
+            "Alignment completed. Segments=%d",
+            len(aligned_segments)
+        )
+
+        print(
+            f"Aligned transcript segments: "
+            f"{len(aligned_segments)}"
+        )
+
+        # ----------------------------------------------------
+        # STEP 7 - SPEAKER STATISTICS
+        # ----------------------------------------------------
+
+        logger.info(
+            "Step 7: Calculating speaker statistics."
+        )
+
+        print(
+            "\nSTEP 7: SPEAKER STATISTICS"
+        )
+
+        speaker_statistics = (
+            calculate_speaker_statistics(
+                aligned_segments
+            )
+        )
+
+        logger.info(
+            "Speaker statistics calculated for %d speakers.",
+            len(speaker_statistics)
+        )
+
+        # ----------------------------------------------------
+        # STEP 8 - MEETING ANALYSIS
+        # ----------------------------------------------------
+
+        logger.info(
+            "Step 8: Meeting analysis."
+        )
+
+        print(
+            "\nSTEP 8: MEETING ANALYSIS"
+        )
+
+        meeting_analysis = (
+            analyze_meeting(
+                aligned_segments
+            )
+        )
+
+        logger.info(
+            "Meeting analysis completed."
+        )
+
+        # ----------------------------------------------------
+        # STEP 9 - SAVE RESULTS
+        # ----------------------------------------------------
+
+        logger.info(
+            "Step 9: Saving results."
+        )
+
+        print(
+            "\nSTEP 9: SAVE RESULTS"
+        )
+
+        result_file = save_results(
+            transcript=aligned_segments,
+            speaker_statistics=speaker_statistics,
+            language=language,
+            language_probability=language_probability,
+            meeting_analysis=meeting_analysis
+        )
+
+        logger.info(
+            "Results saved successfully: %s",
+            result_file
+        )
+
+        # ----------------------------------------------------
+        # FINAL RESULT
+        # ----------------------------------------------------
+
+        logger.info(
+            "Meeting processing completed successfully."
+        )
+
+        logger.info(
+            "================================================"
+        )
+
+        print(
+            "\n========================================"
+        )
+
+        print(
+            "PIPELINE COMPLETED SUCCESSFULLY"
+        )
+
+        print(
+            "========================================"
+        )
+
+        print(
+            f"Language: {language}"
+        )
+
+        print(
+            f"Language probability: "
+            f"{language_probability:.4f}"
+        )
+
+        print(
+            f"Transcript segments: "
+            f"{len(aligned_segments)}"
+        )
+
+        print(
+            f"Result file: "
+            f"{result_file}"
+        )
+
+        return {
+            "language": language,
+            "language_probability": language_probability,
+            "transcript": aligned_segments,
+            "speaker_statistics": speaker_statistics,
+            "meeting_analysis": meeting_analysis,
+            "result_file": str(result_file)
+        }
+
+    except Exception as error:
+
+        # ----------------------------------------------------
+        # ERROR LOGGING
+        # ----------------------------------------------------
+
+        logger.exception(
+            "Meeting processing failed: %s",
+            error
+        )
+
+        print(
+            "\n========================================"
+        )
+
+        print(
+            "PIPELINE FAILED"
+        )
+
+        print(
+            "========================================"
+        )
+
+        print(
+            f"Error: {error}"
+        )
+
+        raise
+
+
+# ============================================================
+# DIRECT EXECUTION
+# ============================================================
+
+if __name__ == "__main__":
+
+    test_file = Path(
+        "data/uploads/test_60sec.wav"
+    )
+
+    result = process_meeting(
+        test_file
     )
 
     print(
-        "Speaker statistics calculated!"
-    )
-
-    # ========================================================
-    # STEP 6: MEETING ANALYSIS
-    # ========================================================
-
-    print("\n==============================")
-    print("STEP 6: MEETING ANALYSIS")
-    print("==============================")
-
-    meeting_analysis = analyze_meeting(
-        aligned_segments
+        "\n=============================="
     )
 
     print(
-        "Meeting analysis completed!"
-    )
-
-    # ========================================================
-    # STEP 7: SAVE JSON RESULT
-    # ========================================================
-
-    print("\n==============================")
-    print("STEP 7: SAVING RESULT")
-    print("==============================")
-
-    result_file = save_results(
-        transcript=aligned_segments,
-        speaker_statistics=speaker_statistics,
-        language=info.language,
-        language_probability=(
-            info.language_probability
-        ),
-        meeting_analysis=meeting_analysis
+        "CONFIDENCE SAMPLE"
     )
 
     print(
-        "\nComplete meeting processing finished!"
+        "=============================="
     )
 
-    # ========================================================
-    # RETURN STRUCTURED RESULT
-    # ========================================================
+    for segment in result[
+        "transcript"
+    ][:5]:
 
-    return {
-        "language": info.language,
-
-        "language_probability": (
-            info.language_probability
-        ),
-
-        "transcript": aligned_segments,
-
-        "speaker_statistics": speaker_statistics,
-
-        "meeting_analysis": meeting_analysis,
-
-        "result_file": str(result_file)
-    }
+        print(
+            f"[{segment['start']:.2f}s - "
+            f"{segment['end']:.2f}s] "
+            f"{segment['speaker']} | "
+            f"confidence/logprob: "
+            f"{segment.get('confidence', 'N/A')} | "
+            f"{segment['text']}"
+        )

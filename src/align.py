@@ -1,7 +1,4 @@
 def calculate_overlap(start1, end1, start2, end2):
-    """
-    Calculate how much two time intervals overlap.
-    """
     overlap_start = max(start1, start2)
     overlap_end = min(end1, end2)
 
@@ -12,11 +9,6 @@ def calculate_overlap(start1, end1, start2, end2):
 
 
 def assign_speaker(transcript_segment, speaker_segments):
-    """
-    Assign the speaker whose diarization segment
-    has the largest overlap with the transcript segment.
-    """
-
     transcript_start = transcript_segment["start"]
     transcript_end = transcript_segment["end"]
 
@@ -24,7 +16,6 @@ def assign_speaker(transcript_segment, speaker_segments):
     best_overlap = 0.0
 
     for speaker_segment in speaker_segments:
-
         overlap = calculate_overlap(
             transcript_start,
             transcript_end,
@@ -40,55 +31,57 @@ def assign_speaker(transcript_segment, speaker_segments):
 
 
 def align_transcript(transcript_segments, speaker_segments):
-    """
-    Combine transcript segments with speaker information.
-    """
-
     aligned_segments = []
 
     for transcript in transcript_segments:
-
         speaker = assign_speaker(
             transcript,
             speaker_segments
         )
 
-        aligned_segments.append({
+        # Preserve all transcript information,
+        # including confidence scores.
+        aligned_segment = {
             "start": transcript["start"],
             "end": transcript["end"],
             "speaker": speaker,
             "text": transcript["text"]
-        })
+        }
+
+        if "confidence" in transcript:
+            aligned_segment["confidence"] = transcript["confidence"]
+
+        aligned_segments.append(aligned_segment)
 
     return aligned_segments
 
 
 if __name__ == "__main__":
 
-    # Small test to verify the alignment logic
-
     transcript_segments = [
         {
-            "start": 10.0,
-            "end": 15.0,
-            "text": "Hello everyone."
+            "start": 0.0,
+            "end": 5.0,
+            "text": "Hello everyone",
+            "confidence": -0.15
         },
         {
-            "start": 20.0,
-            "end": 25.0,
-            "text": "Today we will discuss AI."
+            "start": 5.0,
+            "end": 10.0,
+            "text": "Today we will discuss AI",
+            "confidence": -0.22
         }
     ]
 
     speaker_segments = [
         {
-            "start": 9.0,
-            "end": 16.0,
+            "start": 0.0,
+            "end": 6.0,
             "speaker": "SPEAKER_00"
         },
         {
-            "start": 19.0,
-            "end": 26.0,
+            "start": 6.0,
+            "end": 10.0,
             "speaker": "SPEAKER_01"
         }
     ]
@@ -98,13 +91,9 @@ if __name__ == "__main__":
         speaker_segments
     )
 
-    print("\n===== ALIGNMENT TEST =====")
+    print("\n==============================")
+    print("ALIGNMENT TEST")
+    print("==============================")
 
-    for item in result:
-        print(
-            f"[{item['start']:.2f}s - {item['end']:.2f}s] "
-            f"{item['speaker']}: "
-            f"{item['text']}"
-        )
-
-    print("\n===== ALIGNMENT TEST COMPLETE =====")
+    for segment in result:
+        print(segment)
